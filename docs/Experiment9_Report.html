@@ -1,0 +1,685 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Experiment 9 - CI/CD Pipeline - Lab Report</title>
+<style>
+  :root {
+    --ink: #1c2333; --muted: #5b6478; --line: #d9deea; --soft: #f4f6fb;
+    --brand: #1f3a8a; --brand-2: #3157d5;
+    --ci: #0f766e; --ci-bg: #e6f6f4;
+    --cd: #b45309; --cd-bg: #fff4e0;
+    --good: #15803d; --bad: #b91c1c;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #eef1f8; color: var(--ink); font: 15px/1.6 "Segoe UI", Calibri, Arial, sans-serif; }
+  .page { max-width: 900px; margin: 28px auto; background: #fff; padding: 44px 52px 56px; border-radius: 6px; box-shadow: 0 6px 30px rgba(20,30,70,.12); }
+
+  .banner { background: linear-gradient(135deg, var(--brand), var(--brand-2)); color: #fff; padding: 26px 30px; border-radius: 10px; }
+  .banner .exp { letter-spacing: 2.5px; text-transform: uppercase; font-size: 12px; opacity: .85; }
+  .banner h1 { margin: 6px 0 0; font-size: 25px; line-height: 1.3; }
+  .banner p { margin: 8px 0 0; opacity: .9; font-size: 14px; }
+
+  table { width: 100%; border-collapse: collapse; margin: 12px 0 6px; font-size: 14px; }
+  th, td { border: 1px solid var(--line); padding: 8px 12px; text-align: left; vertical-align: top; }
+  th { background: var(--soft); font-weight: 600; color: var(--brand); }
+  table.info td:first-child { width: 26%; font-weight: 600; background: var(--soft); color: var(--brand); }
+  .fill { background: #fff7c2; padding: 1px 8px; border-radius: 4px; border: 1px dashed #d4b800; }
+
+  h2 { font-size: 18px; margin: 34px 0 10px; padding: 7px 14px; color: #fff; background: var(--brand); border-radius: 6px; }
+  h2.ci { background: var(--ci); } h2.cd { background: var(--cd); }
+  h3 { font-size: 15.5px; margin: 20px 0 6px; color: var(--brand); border-bottom: 2px solid var(--line); padding-bottom: 3px; }
+  p { margin: 8px 0; text-align: justify; }
+  ul, ol { margin: 8px 0 8px 22px; padding: 0; } li { margin: 3px 0; }
+
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .card { border-radius: 8px; padding: 12px 16px; border: 1px solid var(--line); }
+  .card.ci { background: var(--ci-bg); border-color: #9fd8d1; } .card.cd { background: var(--cd-bg); border-color: #f1cd8e; }
+  .card h4 { margin: 0 0 4px; font-size: 14.5px; } .card.ci h4 { color: var(--ci); } .card.cd h4 { color: var(--cd); }
+  .tag { display: inline-block; font-size: 11.5px; font-weight: 700; padding: 1px 9px; border-radius: 999px; color: #fff; }
+  .tag.ci { background: var(--ci); } .tag.cd { background: var(--cd); }
+
+  table.cmp th.ci { background: var(--ci); color: #fff; } table.cmp th.cd { background: var(--cd); color: #fff; }
+  table.cmp td:first-child { font-weight: 600; background: var(--soft); width: 20%; }
+
+  /* pipeline diagram */
+  .flow { display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch; margin: 14px 0; }
+  .stage { flex: 1 1 0; min-width: 200px; border-radius: 10px; padding: 10px 12px; border: 2px solid; }
+  .stage.ci { border-color: var(--ci); background: var(--ci-bg); } .stage.cd { border-color: var(--cd); background: var(--cd-bg); }
+  .stage .t { font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: .6px; margin-bottom: 6px; }
+  .stage.ci .t { color: var(--ci); } .stage.cd .t { color: var(--cd); }
+  .step { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; margin: 5px 0; font-size: 12.5px; }
+  .arrow { align-self: center; font-size: 22px; color: var(--muted); }
+  .trigger { text-align: center; font-size: 13px; color: var(--muted); margin: 4px 0; }
+
+  pre { background: #0f172a; color: #e2e8f0; border-radius: 8px; padding: 12px 16px; overflow-x: auto; font: 12.5px/1.5 Consolas, "Cascadia Mono", monospace; margin: 8px 0 14px; }
+  pre.out { background: #f1f5f9; color: #0f172a; border: 1px solid var(--line); }
+  .cap { font-size: 12.5px; color: var(--muted); margin: 10px 0 0; font-weight: 600; }
+  code.i { background: var(--soft); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; font: 12.5px Consolas, monospace; }
+  .shot { border: 2px dashed #b6bfd6; background: var(--soft); border-radius: 8px; padding: 34px 12px; text-align: center; color: var(--muted); margin: 8px 0 14px; font-size: 13.5px; }
+  .note { background: #eef4ff; border-left: 4px solid var(--brand-2); padding: 8px 14px; border-radius: 0 6px 6px 0; margin: 10px 0; font-size: 14px; }
+  .tree { font: 12.5px/1.45 Consolas, monospace; background: var(--soft); border: 1px solid var(--line); border-radius: 8px; padding: 10px 16px; white-space: pre; overflow-x: auto; }
+  .ok { color: var(--good); font-weight: 700; }
+  footer { margin-top: 40px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12.5px; text-align: center; }
+
+  @media (max-width: 720px) { .page { padding: 22px 16px; } .two { grid-template-columns: 1fr; } }
+  @media print {
+    body { background: #fff; } .page { box-shadow: none; margin: 0; padding: 0; max-width: none; }
+    h2, h3 { break-after: avoid; } table, pre, .card, .stage, .shot { break-inside: avoid; }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="banner">
+  <div class="exp">Experiment No. 9</div>
+  <h1>Design and Implementation of a Continuous Integration and Continuous Deployment (CI/CD) Pipeline using GitHub Actions</h1>
+  <p>Automated build &bull; Unit, API, Contract &amp; Testcontainers testing &bull; Docker &bull; Canary release</p>
+</div>
+
+<table class="info">
+  <tr><td>Name</td><td><span class="fill">[ Your Name ]</span></td></tr>
+  <tr><td>Roll No. / Reg. No.</td><td><span class="fill">[ Your Roll Number ]</span></td></tr>
+  <tr><td>Class / Section</td><td><span class="fill">[ Class &amp; Section ]</span></td></tr>
+  <tr><td>Subject / Faculty</td><td><span class="fill">[ Subject ]</span> &nbsp;/&nbsp; <span class="fill">[ Faculty Name ]</span></td></tr>
+  <tr><td>Date of Experiment</td><td><span class="fill">[ DD / MM / YYYY ]</span></td></tr>
+  <tr><td>GitHub Repository</td><td><span class="fill">https://github.com/&lt;your-username&gt;/exp9-ci-cd-pipeline</span></td></tr>
+</table>
+
+<!-- ======================================================= AIM -->
+<h2>Aim</h2>
+<p>To design and implement a <b>Continuous Integration (CI)</b> pipeline that automatically builds and tests an application, and a <b>Continuous Deployment (CD)</b> pipeline that containerizes the application with Docker and releases it automatically with a canary deployment strategy &mdash; both created as GitHub Actions workflows that run every time code is pushed to GitHub.</p>
+
+<!-- ======================================================= OBJECTIVES -->
+<h2>Objectives</h2>
+<div class="two">
+  <div class="card ci"><h4>Part A &mdash; Continuous Integration</h4>
+    <ol>
+      <li>To understand Continuous Integration concepts</li>
+      <li>To implement unit and integration testing</li>
+      <li>To perform contract testing between services</li>
+      <li>To automate testing workflows</li>
+    </ol></div>
+  <div class="card cd"><h4>Part B &mdash; Continuous Deployment</h4>
+    <ol start="5">
+      <li>To understand Continuous Deployment concepts</li>
+      <li>To containerize applications using Docker</li>
+      <li>To automate deployment using GitHub Actions</li>
+      <li>To implement canary deployment strategies</li>
+    </ol></div>
+</div>
+<h3>How each objective is achieved in this experiment</h3>
+<table>
+  <tr><th style="width:5%">#</th><th style="width:36%">Objective</th><th>Where it is achieved</th></tr>
+  <tr><td>1</td><td>Understand CI concepts</td><td>Theory &amp; CI-vs-CD table below; <code class="i">.github/workflows/ci.yml</code> (build on every push / pull request)</td></tr>
+  <tr><td>2</td><td>Unit &amp; integration testing</td><td><code class="i">ProductServiceTest</code> (JUnit 5 + Mockito), <code class="i">ProductControllerTest</code> and <code class="i">ProductApiIntegrationTest</code> (MockMvc)</td></tr>
+  <tr><td>3</td><td>Contract testing between services</td><td><code class="i">ProductConsumerPactTest</code> (frontend) and <code class="i">ProductProviderPactTest</code> (backend) using Pact</td></tr>
+  <tr><td>4</td><td>Automate testing workflows</td><td>CI jobs 2&ndash;5 run the four test levels in parallel; <code class="i">ProductPostgresContainerTest</code> uses Testcontainers with real PostgreSQL</td></tr>
+  <tr><td>5</td><td>Understand CD concepts</td><td>Theory &amp; CI-vs-CD table; <code class="i">.github/workflows/cd.yml</code> starts only after CI succeeds</td></tr>
+  <tr><td>6</td><td>Containerize with Docker</td><td><code class="i">Dockerfile</code> (multi-stage, non-root, health check); image pushed to GitHub Container Registry (Docker Hub optional)</td></tr>
+  <tr><td>7</td><td>Automate deployment with GitHub Actions</td><td>CD jobs: <i>Docker Build and Push</i> &rarr; <i>Canary Deploy</i> &rarr; <i>Promote</i> / <i>Rollback</i></td></tr>
+  <tr><td>8</td><td>Canary deployment strategy</td><td><code class="i">deploy/</code> folder: nginx splits traffic 90 % stable / 10 % canary, <code class="i">verify-canary.sh</code> decides promote or rollback</td></tr>
+</table>
+
+<h2>COs Mapped</h2>
+<p><b>CO6 &ndash; BT6</b></p>
+
+<!-- ======================================================= PREREQ -->
+<h2>Pre-requisites</h2>
+<ul>
+  <li>Basic knowledge of Java and Spring Boot</li>
+  <li>Understanding of REST APIs</li>
+  <li>Familiarity with testing concepts</li>
+  <li>Knowledge of the CI pipeline (for the CD part)</li>
+  <li>Basic understanding of Docker</li>
+  <li>Familiarity with deployment concepts</li>
+</ul>
+
+<h2>Software Requirements</h2>
+<table>
+  <tr><th>Software</th><th>Purpose in this experiment</th></tr>
+  <tr><td>Java (JDK 17+)</td><td>Compile and run the Spring Boot application</td></tr>
+  <tr><td>Spring Boot 3.3</td><td>REST service (Product Catalogue)</td></tr>
+  <tr><td>JUnit 5 (+ Mockito)</td><td>Unit tests</td></tr>
+  <tr><td>MockMvc</td><td>API / integration tests without starting a real server</td></tr>
+  <tr><td>Pact</td><td>Consumer-driven contract testing</td></tr>
+  <tr><td>Testcontainers</td><td>Real PostgreSQL database inside a Docker container during tests</td></tr>
+  <tr><td>Docker</td><td>Containerize the application</td></tr>
+  <tr><td>GitHub Actions</td><td>CI and CD workflow automation</td></tr>
+  <tr><td>Docker Hub / GitHub Container Registry</td><td>Container image registry</td></tr>
+  <tr><td>GitHub account, Git, VS Code</td><td>Source control, repository hosting and editing</td></tr>
+</table>
+
+<!-- ======================================================= THEORY -->
+<h2>Description / Theory</h2>
+<h3><span class="tag ci">CI</span> Continuous Integration</h3>
+<p>Continuous Integration is a development practice where code changes are <b>automatically built and tested whenever they are pushed</b> to a repository. Bugs are detected within minutes of being introduced, code quality is maintained, and manual testing effort is reduced. Four levels of testing are automated in this experiment:</p>
+<ul>
+  <li><b>Unit testing</b> validates individual methods (the service layer) in isolation, with the database mocked.</li>
+  <li><b>Integration testing</b> checks that the REST API works correctly through controller, service and database (MockMvc).</li>
+  <li><b>Contract testing</b> verifies that the frontend and backend agree on the request / response format (Pact). If the backend changes in a way that would break the frontend, the build fails.</li>
+  <li><b>Testcontainers</b> start real infrastructure (PostgreSQL) in Docker during the test, making tests more reliable and closer to production.</li>
+</ul>
+<h3><span class="tag cd">CD</span> Continuous Deployment</h3>
+<p>Continuous Deployment is the process of <b>automatically deploying an application after it has passed all tests</b>, so new features reach users quickly and reliably. The application is packaged with <b>Docker</b>, which bundles the app and all its dependencies and removes &ldquo;works on my machine&rdquo; problems. <b>GitHub Actions</b> automates the build, test and deployment steps whenever code is pushed.</p>
+<p>A <b>canary deployment</b> releases the new version to a small group of users first (10 % here). If the canary behaves well the release is expanded to everyone; if not, it is rolled back automatically &mdash; reducing the risk of failures.</p>
+
+<h3>Difference between CI and CD</h3>
+<table class="cmp">
+  <tr><th></th><th class="ci">Continuous Integration (CI)</th><th class="cd">Continuous Deployment (CD)</th></tr>
+  <tr><td>Question answered</td><td>&ldquo;Does the new code build and pass all tests?&rdquo;</td><td>&ldquo;Can this verified build be released safely to users?&rdquo;</td></tr>
+  <tr><td>Main goal</td><td>Detect defects early; keep the main branch always working</td><td>Deliver working software to users quickly, safely and automatically</td></tr>
+  <tr><td>Trigger</td><td>Every push and pull request</td><td>Automatically after CI succeeds on <code class="i">main</code></td></tr>
+  <tr><td>Main activities</td><td>Compile, unit tests, API tests, contract tests, Testcontainers tests, package JAR, coverage</td><td>Build Docker image, push to registry, canary release, verify, promote or roll back</td></tr>
+  <tr><td>Output</td><td>A tested, verified JAR and test reports</td><td>A running, released version of the application</td></tr>
+  <tr><td>Tools here</td><td>Maven, JUnit 5, Mockito, MockMvc, Pact, Testcontainers</td><td>Docker, GHCR / Docker Hub, nginx, Docker Compose</td></tr>
+  <tr><td>Workflow file</td><td><code class="i">ci.yml</code></td><td><code class="i">cd.yml</code></td></tr>
+  <tr><td>If it fails</td><td>Code is rejected &mdash; nothing is deployed</td><td>Canary is rolled back &mdash; users keep the previous stable version</td></tr>
+  <tr><td>Risk handled</td><td>Bugs and broken integrations</td><td>Bad releases and environment differences</td></tr>
+</table>
+
+<!-- ======================================================= PIPELINE -->
+<h2>Pipeline Design</h2>
+<div class="trigger"><b>git push</b> to <code class="i">main</code> &nbsp;&rarr;&nbsp; GitHub Actions starts automatically</div>
+<div class="flow">
+  <div class="stage ci"><div class="t">CI &middot; <span style="text-transform:none">ci.yml</span></div>
+    <div class="step">1. Build and Compile</div>
+    <div class="step">2. Unit Tests (JUnit 5 + Mockito)</div>
+    <div class="step">3. API and Integration Tests (MockMvc)</div>
+    <div class="step">4. Infrastructure Tests (Testcontainers)</div>
+    <div class="step">5. Contract Tests (Pact)</div>
+    <div class="step">6. Package JAR and Code Coverage</div>
+    <div class="step">7. CI Gate</div></div>
+  <div class="arrow">&rarr;</div>
+  <div class="stage cd"><div class="t">CD &middot; <span style="text-transform:none">cd.yml</span></div>
+    <div class="step">1. Docker Build and Push Image</div>
+    <div class="step">2. Canary Deploy (10 %) and Verify</div>
+    <div class="step"><span class="ok">pass</span> &rarr; 3. Promote to 100 % (Full Rollout)</div>
+    <div class="step"><span style="color:var(--bad);font-weight:700">fail</span> &rarr; 4. Rollback (keep stable)</div></div>
+</div>
+
+<h3>Jobs written in the workflows</h3>
+<table>
+  <tr><th>Workflow</th><th>Job name (as shown in GitHub Actions)</th><th>What it does</th></tr>
+  <tr><td rowspan="7"><span class="tag ci">CI</span><br><code class="i">ci.yml</code></td><td>1. Build and Compile</td><td>Checks out code, sets up JDK 17, compiles main and test sources</td></tr>
+  <tr><td>2. Unit Tests (JUnit 5 + Mockito)</td><td>Runs <code class="i">ProductServiceTest</code> (mocked repository)</td></tr>
+  <tr><td>3. API and Integration Tests (MockMvc)</td><td>Runs <code class="i">ProductControllerTest</code> and <code class="i">ProductApiIntegrationTest</code></td></tr>
+  <tr><td>4. Infrastructure Tests (Testcontainers - PostgreSQL)</td><td>Starts a PostgreSQL container and runs repository tests against it</td></tr>
+  <tr><td>5. Contract Tests (Pact - frontend vs backend)</td><td>Generates the pact from the consumer test, verifies it against the real backend</td></tr>
+  <tr><td>6. Package JAR and Code Coverage</td><td>Runs <code class="i">mvn verify</code>, uploads the JAR and the JaCoCo coverage report</td></tr>
+  <tr><td>7. CI Gate - all checks passed</td><td>Single pass / fail result for the whole CI run</td></tr>
+  <tr><td rowspan="4"><span class="tag cd">CD</span><br><code class="i">cd.yml</code></td><td>1. Docker Build and Push Image</td><td>Builds the image from the <code class="i">Dockerfile</code>, pushes to GHCR (and Docker Hub if secrets exist)</td></tr>
+  <tr><td>2. Canary Deploy (10 percent traffic) and Verify</td><td>Runs stable + canary behind nginx, sends 50 requests, checks the canary has zero errors</td></tr>
+  <tr><td>3. Promote to 100 percent (Full Rollout)</td><td>Rolls the new release out to all traffic; tags the image <code class="i">stable</code> and <code class="i">latest</code></td></tr>
+  <tr><td>4. Rollback (keep previous stable release)</td><td>Runs only when the canary fails; the stable tag is never moved</td></tr>
+</table>
+
+<h3>Project structure</h3>
+<div class="tree">exp9-ci-cd-pipeline/
+├── .github/workflows/
+│   ├── ci.yml                  &lt;-- Continuous Integration workflow
+│   └── cd.yml                  &lt;-- Continuous Deployment workflow
+├── src/main/java/com/exp9/cicd/   (controller, service, repository, model, client)
+├── src/main/resources/static/index.html   (web UI of the application)
+├── src/test/java/com/exp9/cicd/
+│   ├── unit/ProductServiceTest.java                 JUnit 5 + Mockito
+│   ├── api/ProductControllerTest.java               MockMvc (web layer)
+│   ├── api/ProductApiIntegrationTest.java           MockMvc (full context)
+│   ├── containers/ProductPostgresContainerTest.java Testcontainers
+│   └── contract/ProductConsumerPactTest.java + ProductProviderPactTest.java   Pact
+├── deploy/                     docker-compose.canary.yml, nginx/*.conf, canary scripts
+├── scripts/push-to-github.ps1 | push-to-github.sh
+├── .githooks/post-commit       (auto-push to GitHub after every commit)
+├── Dockerfile
+└── pom.xml</div>
+
+<!-- ======================================================= PROCEDURE -->
+<h2>Implementation / Procedure</h2>
+<h3>Part A &mdash; Continuous Integration</h3>
+<ol>
+  <li>Create a Spring Boot REST service (Product Catalogue) with controller, service and JPA repository layers.</li>
+  <li>Write <b>unit tests</b> with JUnit 5 and Mockito for the business logic (discount calculation, not-found handling).</li>
+  <li>Implement <b>API tests</b> using MockMvc &mdash; first on the web layer only, then on the full application context.</li>
+  <li>Define <b>contract tests</b> using Pact: the frontend client records its expectations; the backend verifies them.</li>
+  <li>Integrate <b>Testcontainers</b> to run repository tests against a real PostgreSQL container.</li>
+  <li>Configure the <b>CI pipeline</b> (<code class="i">ci.yml</code>) so all tests run automatically on every push and pull request.</li>
+</ol>
+<h3>Part B &mdash; Continuous Deployment</h3>
+<ol start="7">
+  <li>Create a <b>Dockerfile</b> (multi-stage build: Maven build stage, small JRE runtime stage, non-root user, health check).</li>
+  <li>Build the Docker image and push it to the <b>container registry</b> (GitHub Container Registry; Docker Hub optional).</li>
+  <li>Configure the <b>GitHub Actions workflow</b> (<code class="i">cd.yml</code>) that starts automatically after CI succeeds.</li>
+  <li>Automate the build and deployment steps (image build, push, deploy).</li>
+  <li>Implement the <b>canary deployment strategy</b>: nginx routes 10 % of traffic to the new version; the verification script promotes it to 100 % or rolls it back.</li>
+  <li>Push the project to GitHub (steps below) &mdash; the pipelines now run automatically.</li>
+</ol>
+
+<!-- ======================================================= CODE -->
+<h2>Source Code (key parts)</h2>
+<p class="cap">1. Unit test - JUnit 5 + Mockito (ProductServiceTest.java)</p>
+<pre>/** UNIT TESTS - JUnit 5 + Mockito. The repository is mocked, so no Spring context and no database. */
+@ExtendWith(MockitoExtension.class)
+@DisplayName(&quot;Unit tests - ProductService&quot;)
+class ProductServiceTest {
+
+    @Mock
+    private ProductRepository repository;
+
+    @InjectMocks
+    private ProductService service;
+
+    @Test
+    @DisplayName(&quot;create() saves a product built from the request&quot;)
+    void createSavesProduct() {
+        when(repository.save(any(Product.class))).thenAnswer(inv -&gt; inv.getArgument(0));
+
+        Product saved = service.create(new ProductRequest(&quot;Mouse&quot;, 799.0, 25));
+
+        assertEquals(&quot;Mouse&quot;, saved.getName());
+        assertEquals(799.0, saved.getPrice());
+        assertEquals(25, saved.getStock());
+        verify(repository).save(any(Product.class));
+    }
+
+    // ...
+
+    @ParameterizedTest(name = &quot;price {0} with {1}% discount -&gt; {2}&quot;)
+    @CsvSource({
+            &quot;1000.0, 10, 900.0&quot;,
+            &quot;2000.0, 25, 1500.0&quot;,
+            &quot;499.99, 0, 499.99&quot;,
+            &quot;100.0, 100, 0.0&quot;,
+            &quot;333.33, 10, 300.0&quot;
+    })
+    @DisplayName(&quot;priceWithDiscount() applies the percentage and rounds to 2 decimals&quot;)
+    void discountIsCalculatedCorrectly(double price, double percent, double expected) {
+        when(repository.findById(1L)).thenReturn(Optional.of(new Product(&quot;Item&quot;, price, 1)));
+
+        assertEquals(expected, service.priceWithDiscount(1L, percent), 0.001);
+    }</pre>
+<p class="cap">2. API test - MockMvc (ProductControllerTest.java)</p>
+<pre>@WebMvcTest(ProductController.class)
+@DisplayName(&quot;API tests - ProductController (MockMvc)&quot;)
+class ProductControllerTest {
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @MockBean
+    private ProductService service;
+
+    // ...
+
+    @Test
+    @DisplayName(&quot;GET /api/products/1 -&gt; 200 with the product&quot;)
+    void getProduct() throws Exception {
+        when(service.findById(1L)).thenReturn(laptop());
+
+        mockMvc.perform(get(&quot;/api/products/1&quot;))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(&quot;$.id&quot;).value(1))
+                .andExpect(jsonPath(&quot;$.price&quot;).value(55000.0))
+                .andExpect(jsonPath(&quot;$.stock&quot;).value(10));
+    }</pre>
+<p class="cap">3. Testcontainers - real PostgreSQL (ProductPostgresContainerTest.java)</p>
+<pre>@SpringBootTest
+@Testcontainers(disabledWithoutDocker = true)
+@DisplayName(&quot;Testcontainers - repository against real PostgreSQL&quot;)
+class ProductPostgresContainerTest {
+
+    @Container
+    @ServiceConnection
+    static PostgreSQLContainer&lt;?&gt; postgres = new PostgreSQLContainer&lt;&gt;(&quot;postgres:16-alpine&quot;);
+
+    @Autowired
+    private ProductRepository repository;
+
+    @BeforeEach
+    void clean() {
+        repository.deleteAll();
+    }
+
+    @Test
+    @DisplayName(&quot;the container is up and PostgreSQL is the database in use&quot;)
+    void containerIsRunning() {
+        assertTrue(postgres.isRunning());
+        assertTrue(postgres.getJdbcUrl().startsWith(&quot;jdbc:postgresql://&quot;));
+    }</pre>
+<p class="cap">4. Contract test, consumer side - Pact (ProductConsumerPactTest.java)</p>
+<pre>    @Pact(consumer = &quot;product-frontend&quot;)
+    public RequestResponsePact getSingleProductPact(PactDslWithProvider builder) {
+        return builder
+                .given(&quot;product with id 1 exists&quot;)
+                .uponReceiving(&quot;a request for product 1&quot;)
+                .path(&quot;/api/products/1&quot;)
+                .method(&quot;GET&quot;)
+                .willRespondWith()
+                .status(200)
+                .matchHeader(&quot;Content-Type&quot;, &quot;application/json.*&quot;, &quot;application/json&quot;)
+                .body(new PactDslJsonBody()
+                        .integerType(&quot;id&quot;, 1)
+                        .stringType(&quot;name&quot;, &quot;Laptop&quot;)
+                        .numberType(&quot;price&quot;, 55000.0)
+                        .integerType(&quot;stock&quot;, 10))
+                .toPact();
+    }
+
+    // ...
+
+    @Test
+    @PactTestFor(pactMethod = &quot;getSingleProductPact&quot;)
+    @DisplayName(&quot;client can read a single product&quot;)
+    void clientReadsSingleProduct(MockServer mockServer) {
+        Product product = new ProductClient(mockServer.getUrl()).getProduct(1);
+
+        assertEquals(1L, product.getId());
+        assertEquals(&quot;Laptop&quot;, product.getName());
+        assertEquals(55000.0, product.getPrice());
+        assertEquals(10, product.getStock());
+    }</pre>
+<p class="cap">5. Contract test, provider side - Pact (ProductProviderPactTest.java)</p>
+<pre>@Provider(&quot;product-service&quot;)
+@PactFolder(&quot;src/test/resources/pacts&quot;)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@DisplayName(&quot;Contract test (provider) - backend honours the frontend contract&quot;)
+class ProductProviderPactTest {
+
+    @LocalServerPort
+    private int port;
+
+    @Autowired
+    private ProductRepository repository;
+
+    @Autowired
+    private JdbcTemplate jdbc;
+
+    @BeforeEach
+    void setTarget(PactVerificationContext context) {
+        context.setTarget(new HttpTestTarget(&quot;localhost&quot;, port));
+    }
+
+    @TestTemplate
+    @ExtendWith(PactVerificationSpringProvider.class)
+    void verifyPact(PactVerificationContext context) {
+        context.verifyInteraction();
+    }
+
+    @State(&quot;product with id 1 exists&quot;)
+    void productOneExists() {
+        repository.deleteAll();
+        jdbc.execute(&quot;ALTER TABLE products ALTER COLUMN id RESTART WITH 1&quot;);
+        repository.save(new Product(&quot;Laptop&quot;, 55000.0, 10));
+    }
+
+    @State(&quot;no product with id 999 exists&quot;)
+    void productNineNineNineMissing() {
+        repository.deleteAll();
+    }
+}</pre>
+<p class="cap">6. CI workflow - triggers and one job (.github/workflows/ci.yml)</p>
+<pre># =====================================================================================
+#  CONTINUOUS INTEGRATION (CI)
+#  Goal   : every push / pull request is automatically built and tested.
+#  Answers: &quot;Does the new code compile, and does it still work with the rest of the system?&quot;
+#  Stops  : at a verified build artifact (JAR). Deployment is the job of cd.yml.
+# =====================================================================================
+name: &quot;CI - Build and Test Pipeline&quot;
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+# a newer push cancels the older run of the same branch
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  JAVA_VERSION: &quot;17&quot;
+
+jobs:
+
+# ...
+
+  unit-tests:
+    name: &quot;2. Unit Tests (JUnit 5 + Mockito)&quot;
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: Run unit tests
+        run: mvn -B -ntp -Dtest=ProductServiceTest -Dsurefire.failIfNoSpecifiedTests=false test
+
+      - name: Publish test summary
+        if: always()
+        run: bash scripts/test-summary.sh &quot;Unit tests (JUnit 5 + Mockito)&quot;
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-reports
+          path: target/surefire-reports/</pre>
+<p class="cap">7. Dockerfile</p>
+<pre># ---------- Stage 1: build the JAR ----------
+FROM maven:3.9-eclipse-temurin-17 AS build
+WORKDIR /workspace
+COPY pom.xml .
+COPY src ./src
+# Tests already ran in the CI pipeline, so the image build skips them
+RUN mvn -B -ntp -DskipTests package
+
+# ---------- Stage 2: small runtime image ----------
+FROM eclipse-temurin:17-jre-alpine
+RUN addgroup -S app &amp;&amp; adduser -S app -G app
+WORKDIR /app
+COPY --from=build /workspace/target/*.jar app.jar
+
+# Release metadata - overridden at deploy time (stable / canary)
+ARG APP_VERSION=1.0.0
+ENV APP_VERSION=${APP_VERSION} \
+    APP_TRACK=stable \
+    JAVA_OPTS=&quot;&quot;
+
+USER app
+EXPOSE 8080
+
+HEALTHCHECK --interval=10s --timeout=3s --start-period=40s --retries=6 \
+  CMD wget -qO- http://localhost:8080/actuator/health | grep -q UP || exit 1
+
+ENTRYPOINT [&quot;sh&quot;, &quot;-c&quot;, &quot;exec java $JAVA_OPTS -jar app.jar&quot;]</pre>
+<p class="cap">8. CD workflow - triggers and canary job (.github/workflows/cd.yml)</p>
+<pre># =====================================================================================
+#  CONTINUOUS DEPLOYMENT (CD)
+#  Goal   : a change that PASSED CI is automatically packaged, released and rolled out.
+#  Answers: &quot;Can we safely put this verified build in front of real users?&quot;
+#  Starts : automatically after the CI workflow succeeds on main (or manually).
+#  Strategy: CANARY - 10 % of traffic first, verify, then 100 %; automatic rollback on failure.
+# =====================================================================================
+name: &quot;CD - Docker Build, Push and Canary Release&quot;
+
+on:
+  workflow_run:
+    workflows: [ &quot;CI - Build and Test Pipeline&quot; ]
+    types: [ completed ]
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      simulate_canary_failure:
+        description: &quot;Make the canary fail on purpose (demonstrates automatic rollback)&quot;
+        type: boolean
+        default: false
+
+concurrency:
+  group: cd-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write        # push images to GitHub Container Registry (ghcr.io)
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: exp9-cicd-demo
+
+jobs:
+
+# ...
+
+  canary-deploy:
+    name: &quot;2. Canary Deploy (10 percent traffic) and Verify&quot;
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEW_IMAGE: ${{ needs.build-and-push.outputs.image }}:${{ needs.build-and-push.outputs.tag }}
+      STABLE_TAG_IMAGE: ${{ needs.build-and-push.outputs.image }}:stable
+      VERSION: ${{ needs.build-and-push.outputs.version }}
+    steps:
+      - name: Checkout deployment files
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve the stable (previous) release
+        run: |
+          docker pull &quot;$NEW_IMAGE&quot;
+          if docker pull &quot;$STABLE_TAG_IMAGE&quot; &gt; /dev/null 2&gt;&amp;1; then
+            echo &quot;Previous stable release found: $STABLE_TAG_IMAGE&quot;
+            echo &quot;STABLE_IMAGE=$STABLE_TAG_IMAGE&quot; &gt;&gt; &quot;$GITHUB_ENV&quot;
+          else
+            echo &quot;First release ever - using the new image as the stable baseline&quot;
+            echo &quot;STABLE_IMAGE=$NEW_IMAGE&quot; &gt;&gt; &quot;$GITHUB_ENV&quot;
+          fi
+          echo &quot;CANARY_IMAGE=$NEW_IMAGE&quot; &gt;&gt; &quot;$GITHUB_ENV&quot;
+
+      - name: Deploy canary (stable 90 percent / canary 10 percent)
+        run: bash deploy/canary-deploy.sh &quot;$STABLE_IMAGE&quot; &quot;$CANARY_IMAGE&quot; &quot;$VERSION&quot; &quot;${{ inputs.simulate_canary_failure || &#x27;false&#x27; }}&quot;
+
+      - name: Verify canary health with live traffic
+        run: bash deploy/verify-canary.sh 50
+
+      - name: Show container logs when verification failed
+        if: failure()
+        run: docker compose -f deploy/docker-compose.canary.yml logs --tail=40 canary || true
+
+      - name: Tear down canary environment
+        if: always()
+        run: docker compose -f deploy/docker-compose.canary.yml down --remove-orphans || true
+</pre>
+<p class="cap">9. Canary traffic split - nginx (deploy/nginx/canary.conf)</p>
+<pre># CANARY: weighted round-robin  -&gt;  9 of every 10 requests go to stable, 1 of 10 to canary (10 %)
+upstream app {
+    server stable:8080 weight=9;
+    server canary:8080 weight=1;
+}
+
+server {
+    listen 80;
+
+    location / {
+        proxy_pass http://app;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}</pre>
+
+<!-- ======================================================= GITHUB STEPS -->
+<h2>Steps to Push the Project to GitHub from the VS Code Terminal</h2>
+<ol>
+  <li>On <b>github.com</b> click <b>New repository</b> &rarr; name it <code class="i">exp9-ci-cd-pipeline</code> &rarr; leave &ldquo;Add a README&rdquo; <b>unchecked</b> &rarr; <b>Create repository</b>.</li>
+  <li>In VS Code: <b>File &rarr; Open Folder</b> &rarr; select the extracted <code class="i">exp9-ci-cd-pipeline</code> folder. Open the terminal with <code class="i">Ctrl + `</code>.</li>
+  <li>Tell Git who you are (one time only):</li>
+</ol>
+<pre>git config --global user.name  "Your Name"
+git config --global user.email "your-email@example.com"</pre>
+<ol start="4"><li>Create the repository, commit the code and push it:</li></ol>
+<pre>git init -b main
+git add .
+git commit -m "Experiment 9: CI/CD pipeline"
+git remote add origin https://github.com/&lt;your-username&gt;/exp9-ci-cd-pipeline.git
+git push -u origin main</pre>
+<p>A browser window opens the first time so you can sign in to GitHub (Git Credential Manager). If asked for a password in the terminal, use a <b>Personal Access Token</b>, not your account password.</p>
+<div class="note"><b>One-command alternative:</b> <code class="i">.\scripts\push-to-github.ps1 -RepoUrl https://github.com/&lt;your-username&gt;/exp9-ci-cd-pipeline.git</code> (PowerShell) or <code class="i">bash scripts/push-to-github.sh &lt;repo-url&gt;</code> does init, add, commit, remote and push for you.</div>
+<ol start="5">
+  <li><b>Automatic posting:</b> run <code class="i">git config core.hooksPath .githooks</code> once. From then on every <code class="i">git commit</code> is pushed to GitHub automatically by the <code class="i">post-commit</code> hook, which immediately starts the CI pipeline.</li>
+  <li>Open the repository on GitHub &rarr; <b>Actions</b> tab. The <b>CI - Build and Test Pipeline</b> workflow starts; when it succeeds the <b>CD - Docker Build, Push and Canary Release</b> workflow starts by itself.</li>
+  <li>To demonstrate the rollback: <b>Actions &rarr; CD &rarr; Run workflow &rarr;</b> tick <i>simulate_canary_failure</i> &rarr; the canary fails and the <b>Rollback</b> job runs.</li>
+</ol>
+
+<!-- ======================================================= OUTPUT -->
+<h2>Output</h2>
+<p class="cap">1. CI workflow run &mdash; all jobs (Actions tab)</p>
+<div class="shot">[ Paste screenshot: Actions &rarr; CI - Build and Test Pipeline &rarr; all 7 jobs green ]</div>
+<p class="cap">2. Test results summary shown on the run page (expected format)</p>
+<pre class="out">| Test class                    | Tests | Passed | Failed | Skipped |
+|-------------------------------|------:|-------:|-------:|--------:|
+| ProductServiceTest            |    13 |     13 |      0 |       0 |
+| ProductControllerTest         |     7 |      7 |      0 |       0 |
+| ProductApiIntegrationTest     |     5 |      5 |      0 |       0 |
+| ProductPostgresContainerTest  |     3 |      3 |      0 |       0 |
+| ProductConsumerPactTest       |     3 |      3 |      0 |       0 |
+| ProductProviderPactTest       |     3 |      3 |      0 |       0 |</pre>
+<p class="cap">3. CD workflow run &mdash; build, canary, promote (Actions tab)</p>
+<div class="shot">[ Paste screenshot: Actions &rarr; CD - Docker Build, Push and Canary Release &rarr; jobs green ]</div>
+<p class="cap">4. Canary verification printed by <code class="i">deploy/verify-canary.sh</code> (expected format)</p>
+<pre class="out">| Track  | Requests | OK | Errors |
+|--------|---------:|---:|-------:|
+| stable |       45 | 45 |      0 |
+| canary |        5 |  5 |      0 |
+
+Canary traffic share: 10 %  ->  verdict: PASS</pre>
+<p class="cap">5. Docker image in GitHub Packages (repository &rarr; Packages)</p>
+<div class="shot">[ Paste screenshot: exp9-cicd-demo package with tags sha-xxxxxxx, stable, latest ]</div>
+<p class="cap">6. Application web page &mdash; badge shows which release served the request</p>
+<div class="shot">[ Paste screenshot: http://localhost:8080 ]</div>
+
+<!-- ======================================================= OUTCOME -->
+<h2>Expected Outcome</h2>
+<div class="two">
+  <div class="card ci"><h4>Continuous Integration</h4><ul>
+    <li>Automated testing pipeline</li><li>Improved code quality</li><li>Early detection of defects</li></ul></div>
+  <div class="card cd"><h4>Continuous Deployment</h4><ul>
+    <li>Automated deployment pipeline</li><li>Dockerized application</li><li>Reliable release strategy implemented</li></ul></div>
+</div>
+
+<h2>Result</h2>
+<p>A complete CI/CD pipeline was designed and implemented with GitHub Actions. On every push the code is automatically built and tested at four levels (unit, integration, contract, Testcontainers); once CI passes, the application is packaged as a Docker image, pushed to a container registry and released with a canary strategy that either promotes the release to all users or rolls it back automatically. Hence the aim of the experiment was achieved.</p>
+
+<h2>Viva Questions</h2>
+<ol>
+  <li>What is the difference between Continuous Integration, Continuous Delivery and Continuous Deployment?</li>
+  <li>Why is a unit test different from an integration test? Which one is faster?</li>
+  <li>What problem does contract testing solve, and what are the &ldquo;consumer&rdquo; and &ldquo;provider&rdquo; in Pact?</li>
+  <li>Why use Testcontainers instead of an in-memory database?</li>
+  <li>What does a multi-stage Dockerfile give you?</li>
+  <li>How does a canary deployment reduce risk compared with releasing to everyone at once? What triggers a rollback here?</li>
+</ol>
+
+<footer>Experiment 9 &mdash; CI/CD Pipeline &bull; CO6 &ndash; BT6</footer>
+</div>
+</body>
+</html>

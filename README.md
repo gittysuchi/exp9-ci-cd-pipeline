@@ -1,149 +1,131 @@
-# Experiment 9: Combined CI/CD Pipeline with Contract Testing, Testcontainers, Docker and Canary Release
+# Experiment 9 — CI/CD Pipeline with GitHub Actions
 
-## Aim
-To design and implement a Continuous Integration and Continuous Deployment pipeline that automatically builds, tests, packages, publishes, and prepares an application for a controlled canary release.
+**Aim:** design and implement a **Continuous Integration** pipeline (automated build + unit / API / contract / Testcontainers tests) and a **Continuous Deployment** pipeline (Docker + GitHub Actions + canary release) for a Spring Boot application.
 
-## Objectives
-1. Understand Continuous Integration (CI) concepts.
-2. Understand Continuous Deployment (CD) concepts and differentiate CI from CD.
-3. Implement unit testing using JUnit 5.
-4. Implement API integration testing using Spring Boot MockMvc.
-5. Perform contract testing between services using Pact.
-6. Use Testcontainers to test against a real PostgreSQL container.
-7. Automate build and testing workflows with GitHub Actions.
-8. Containerize the Spring Boot application using Docker.
-9. Build and publish the Docker image to GitHub Container Registry (GHCR).
-10. Demonstrate the canary-release stage and understand how to expand a release after health checks.
+> 📄 The ready-to-paste lab report is in **`docs/Experiment9_Report.html`** — open it in a browser, press `Ctrl + A`, `Ctrl + C`, and paste into Word / your record. Fill in the yellow fields (name, roll no., …).
 
-## CI vs CD
+## CI vs CD in one look
 
-| Continuous Integration (CI) | Continuous Deployment (CD) |
+| | CI — `.github/workflows/ci.yml` | CD — `.github/workflows/cd.yml` |
+|---|---|---|
+| Question | "Does the new code build and pass all tests?" | "Can this verified build be released safely?" |
+| Trigger | every push / pull request | automatically after CI succeeds on `main` |
+| Output | tested JAR + reports | released, running version |
+| On failure | code rejected, nothing deployed | canary rolled back, users keep the old version |
+
+## Jobs
+
+**CI** — `CI - Build and Test Pipeline`
+
+| # | Job name | What it does |
+|---|---|---|
+| 1 | Build and Compile | compile main + test code on JDK 17 |
+| 2 | Unit Tests (JUnit 5 + Mockito) | `ProductServiceTest` |
+| 3 | API and Integration Tests (MockMvc) | `ProductControllerTest`, `ProductApiIntegrationTest` |
+| 4 | Infrastructure Tests (Testcontainers - PostgreSQL) | `ProductPostgresContainerTest` against a real PostgreSQL container |
+| 5 | Contract Tests (Pact - frontend vs backend) | `ProductConsumerPactTest` → pact file → `ProductProviderPactTest` |
+| 6 | Package JAR and Code Coverage | `mvn verify`, uploads JAR + JaCoCo report |
+| 7 | CI Gate - all checks passed | one pass/fail result for the run |
+
+**CD** — `CD - Docker Build, Push and Canary Release`
+
+| # | Job name | What it does |
+|---|---|---|
+| 1 | Docker Build and Push Image | build `Dockerfile`, push to GitHub Container Registry (Docker Hub optional) |
+| 2 | Canary Deploy (10 percent traffic) and Verify | nginx sends 10 % of traffic to the new version; script checks for errors |
+| 3 | Promote to 100 percent (Full Rollout) | full rollout, image tagged `stable` + `latest` |
+| 4 | Rollback (keep previous stable release) | runs only if the canary failed; `stable` tag is never moved |
+
+## Put it in VS Code
+
+1. Extract the zip → **File → Open Folder** → pick `exp9-ci-cd-pipeline`.
+2. VS Code suggests the recommended extensions (Java, Spring Boot, Docker, GitHub Actions) — install them.
+3. Install **JDK 17+** and **Maven** (`winget install Apache.Maven`), and **Docker Desktop** (needed only for Testcontainers and the Docker steps).
+
+## Run locally (optional)
+
+```bash
+mvn clean verify                      # runs ALL tests (Testcontainers tests are skipped if Docker isn't running)
+mvn spring-boot:run                   # app on http://localhost:8080
+docker build -t exp9-cicd-demo:local .
+docker run --rm -p 8080:8080 exp9-cicd-demo:local
+```
+
+Handy tasks are in **Terminal → Run Task…** (`.vscode/tasks.json`).
+
+> The Pact contract file `src/test/resources/pacts/product-frontend-product-service.json` is **generated** by the consumer test the first time you run the tests. Run the whole suite (or the consumer test first) — the provider test reads that file. Commit the generated file.
+
+## Push to GitHub from the VS Code terminal
+
+1. On github.com → **New repository** → name `exp9-ci-cd-pipeline` → leave "Add a README" **unchecked** → **Create**.
+2. VS Code → open the terminal (`` Ctrl + ` ``) and run:
+
+```bash
+git config --global user.name  "Your Name"
+git config --global user.email "your-email@example.com"
+
+git init -b main
+git add .
+git commit -m "Experiment 9: CI/CD pipeline"
+git remote add origin https://github.com/<your-username>/exp9-ci-cd-pipeline.git
+git push -u origin main
+```
+
+   (A browser window opens for GitHub sign-in the first time. If a password is requested in the terminal, use a **Personal Access Token**.)
+
+**One-command version** (does init + add + commit + remote + push):
+
+```powershell
+.\scripts\push-to-github.ps1 -RepoUrl https://github.com/<your-username>/exp9-ci-cd-pipeline.git     # PowerShell
+bash scripts/push-to-github.sh https://github.com/<your-username>/exp9-ci-cd-pipeline.git            # Git Bash / WSL / Mac / Linux
+```
+
+**Automatic posting** — after this one-time command, every `git commit` is pushed to GitHub by itself and starts the CI pipeline:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+3. Open your repo → **Actions** tab. CI starts on the push; when it succeeds, CD starts automatically.
+
+### Optional GitHub settings
+
+* **Docker Hub mirror:** Settings → Secrets and variables → Actions → add `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`. Without them the image goes only to GitHub Container Registry (`ghcr.io`), which needs no setup.
+* **Manual approval before 100 % rollout:** Settings → Environments → `production` → *Required reviewers*.
+* **Demo the rollback:** Actions → *CD …* → **Run workflow** → tick `simulate_canary_failure`. The canary returns HTTP 500, verification fails, and the *Rollback* job runs.
+
+## How the canary release works
+
+```
+client ──► nginx gateway ──90%──► stable  (previous release, image tag :stable)
+                        └─10%──► canary  (new release, image tag :sha-xxxxxxx)
+```
+
+`deploy/verify-canary.sh` sends 50 requests, counts responses per release via the `X-App-Track` header, and **passes only if the canary received traffic and produced zero errors**. Pass → `deploy/full-rollout.sh` moves 100 % of traffic to the new version and the image is tagged `stable`/`latest`. Fail → rollback (the `stable` tag never moves).
+
+The same `deploy/` files run on any server with Docker. On GitHub's runner they run in a temporary environment, which is what demonstrates the strategy for this experiment.
+
+## Project layout
+
+```
+.github/workflows/ci.yml        CI workflow (7 jobs)
+.github/workflows/cd.yml        CD workflow (4 jobs)
+src/main/java/...               Product Catalogue REST service (+ ProductClient = "frontend" consumer)
+src/main/resources/static/      web page that shows which release answered
+src/test/java/...               unit · api · containers · contract tests
+deploy/                         docker-compose.canary.yml, nginx configs, canary scripts
+scripts/                        push-to-github.ps1/.sh, test-summary.sh
+.githooks/post-commit           auto-push hook
+Dockerfile                      multi-stage build, non-root, health check
+docs/Experiment9_Report.html    lab report (paste into your record)
+```
+
+## Troubleshooting
+
+| Problem | Fix |
 |---|---|
-| Checks each code change by building and running tests. | Releases a change automatically after the required checks pass. |
-| Focuses on early defect detection and code quality. | Focuses on packaging, publishing and delivering the application. |
-| In this experiment: unit tests, MockMvc tests, Pact verification, and Testcontainers tests. | In this experiment: Docker image build/publish and a canary-release stage. |
-| Usually runs for pushes and pull requests. | Publishing/release runs only after a successful push to `main`. |
-
-**Note:** Continuous Delivery means the application is ready to release but may require approval. Continuous Deployment means successful changes are released automatically. The included canary job publishes the image and marks the canary stage; a real host-specific deployment command is intentionally left as a clearly identified extension because deployment credentials and target infrastructure are different for each student.
-
-## Software requirements
-- JDK 17+
-- Maven 3.9+ (or use the Maven wrapper if you add one)
-- Git and a GitHub account
-- Docker Desktop (for local Testcontainers and Docker image testing)
-- VS Code with Extension Pack for Java (recommended)
-
-## Application
-This sample Spring Boot REST API exposes:
-- `GET /api/products` — list sample products
-- `GET /api/products/1` — fetch a product
-- `GET /api/products/99` — demonstrates a 404 response
-
-## Project structure
-```text
-exp9-ci-cd-pipeline/
-├── .github/workflows/ci-cd.yml
-├── src/main/java/com/example/exp9/
-│   ├── Exp9Application.java
-│   ├── Product.java
-│   ├── ProductController.java
-│   ├── ProductNotFoundException.java
-│   └── ProductService.java
-├── src/test/java/com/example/exp9/
-│   ├── ProductServiceTest.java
-│   ├── ProductControllerTest.java
-│   ├── ProductProviderPactTest.java
-│   └── PostgresContainerTest.java
-├── src/test/resources/pacts/
-├── Dockerfile
-├── compose.yaml
-└── pom.xml
-```
-
-## Procedure (VS Code)
-1. Extract the ZIP file.
-2. Open the extracted `exp9-ci-cd-pipeline` folder in VS Code.
-3. Make sure JDK 17+ and Docker Desktop are installed and Docker is running.
-4. Open **Terminal → New Terminal**.
-5. Run `mvn -version` to verify Maven. If Maven is not installed, install Maven or use a Maven wrapper generated by your IDE.
-6. Run all tests:
-   ```bash
-   mvn clean test
-   ```
-   The Testcontainers test uses Docker and is skipped automatically if Docker is unavailable. Pact verification is included in the test suite.
-7. Start the application:
-   ```bash
-   mvn spring-boot:run
-   ```
-8. Open `http://localhost:8080/api/products` in a browser. Test a single product at `http://localhost:8080/api/products/1`.
-9. Stop the app with `Ctrl+C`.
-10. Build a Docker image:
-    ```bash
-    docker build -t exp9-ci-cd-pipeline:local .
-    ```
-11. Run the container:
-    ```bash
-    docker run --rm -p 8080:8080 exp9-ci-cd-pipeline:local
-    ```
-12. Visit `http://localhost:8080/api/products` again.
-
-## Publish the code to GitHub (one-time setup)
-GitHub cannot be given access to your account from this ZIP. You create the repository and push the code once; after that, GitHub Actions runs automatically on future pushes.
-
-1. On GitHub, create a **new empty repository** named `exp9-ci-cd-pipeline`. Do not add a README or license because this project already has a README.
-2. In the VS Code terminal, from the extracted project folder, run:
-   ```bash
-   git init
-   git add .
-   git commit -m "Add Experiment 9 CI/CD pipeline"
-   git branch -M main
-   git remote add origin https://github.com/YOUR-USERNAME/exp9-ci-cd-pipeline.git
-   git push -u origin main
-   ```
-3. Replace `YOUR-USERNAME` with your GitHub username. GitHub may ask you to authenticate in a browser.
-4. Open the repository on GitHub → **Actions**. The workflow `Exp 9 - CI and CD Pipeline` should start automatically.
-5. After editing code, run:
-   ```bash
-   git add .
-   git commit -m "Update application"
-   git push
-   ```
-   That push automatically starts CI again. A push to `main` that passes the test jobs also builds and publishes the image to GHCR.
-
-## Pipeline jobs
-1. **Unit and API Integration Tests** — checks out code, sets up Java 17, and runs JUnit, MockMvc, and Pact tests.
-2. **Testcontainers Database Test** — starts PostgreSQL in a container and checks a create/insert/query operation. It runs only after the first test job passes.
-3. **Build and Publish Docker Image (CD)** — runs on successful pushes to `main`, builds the Docker image, and publishes it to GitHub Container Registry.
-4. **Canary Release Plan** — records the published image and represents the controlled canary release stage. A production canary rollout requires a real deployment target, health checks, traffic routing, and deployment credentials stored as GitHub Actions Secrets.
-
-## Canary deployment concept
-A canary deployment releases a new version to a small portion of traffic first. Monitor errors, latency, and health checks. If the canary is healthy, gradually increase traffic; if it fails, route traffic back to the stable version. The provided `compose.yaml` starts separate stable and canary app containers on ports 8080 and 8081 for local demonstration, but it does **not** configure traffic splitting by itself.
-
-For a local two-container demonstration:
-```bash
-docker compose up --build
-```
-- Stable: `http://localhost:8080/api/products`
-- Canary: `http://localhost:8081/api/products`
-
-Stop them with `Ctrl+C`, then:
-```bash
-docker compose down
-```
-
-## Expected outcomes
-- Unit, API integration, contract, and database-container tests are included.
-- A GitHub Actions workflow automates testing on pushes and pull requests.
-- Docker image packaging and publishing are automated for successful pushes to `main`.
-- A canary release stage and local stable/canary containers are demonstrated.
-- CI and CD responsibilities are clearly differentiated.
-
-## Common issues
-- **`mvn` is not recognized:** install Maven and add its `bin` folder to PATH, then reopen VS Code. Alternatively, generate/use a Maven wrapper.
-- **Docker/Testcontainers fails:** start Docker Desktop and wait until it reports that the engine is running. On a machine without Docker, the Testcontainers test is skipped locally.
-- **Git is not recognized:** install Git for Windows, reopen VS Code, and verify with `git --version`.
-- **GHCR publish fails:** ensure Actions are enabled and the workflow has package write permission. For an organization, package policies may restrict publishing.
-- **Workflow is not visible:** ensure `.github/workflows/ci-cd.yml` is committed to the repository and the branch is `main`.
-
-## Result
-A sample Spring Boot project and GitHub Actions pipeline have been prepared to demonstrate CI testing, contract verification, Testcontainers, Docker packaging, image publishing, and a canary-release stage.
+| `git push` asks for a password | use a Personal Access Token, or sign in through the browser prompt |
+| CD never starts | CD starts only after the **CI workflow succeeds on `main`**; check the Actions tab for a red CI run |
+| Image push fails with *permission denied* | Settings → Actions → General → Workflow permissions → **Read and write permissions** |
+| Testcontainers tests show as *skipped* locally | start Docker Desktop (on GitHub Actions they always run) |
+| `mvn` not recognised | install Maven and reopen the terminal |

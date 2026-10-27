@@ -1,0 +1,10 @@
+#!/bin/sh
+# AUTO-PUSH: every `git commit` is automatically pushed to GitHub.
+# Enable once with:   git config core.hooksPath .githooks
+branch="$(git rev-parse --abbrev-ref HEAD)"
+if git remote get-url origin >/dev/null 2>&1; then
+  echo "[auto-push] pushing '$branch' to origin ..."
+  git push origin "$branch" || echo "[auto-push] push failed - run 'git push' manually"
+else
+  echo "[auto-push] no 'origin' remote yet - skipping (add one with: git remote add origin <url>)"
+fi

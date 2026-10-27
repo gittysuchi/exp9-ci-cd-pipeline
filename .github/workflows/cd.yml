@@ -1,0 +1,231 @@
+# =====================================================================================
+#  CONTINUOUS DEPLOYMENT (CD)
+#  Goal   : a change that PASSED CI is automatically packaged, released and rolled out.
+#  Answers: "Can we safely put this verified build in front of real users?"
+#  Starts : automatically after the CI workflow succeeds on main (or manually).
+#  Strategy: CANARY - 10 % of traffic first, verify, then 100 %; automatic rollback on failure.
+# =====================================================================================
+name: "CD - Docker Build, Push and Canary Release"
+
+on:
+  workflow_run:
+    workflows: [ "CI - Build and Test Pipeline" ]
+    types: [ completed ]
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      simulate_canary_failure:
+        description: "Make the canary fail on purpose (demonstrates automatic rollback)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: cd-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write        # push images to GitHub Container Registry (ghcr.io)
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: exp9-cicd-demo
+
+jobs:
+  # ---------------------------------------------------------------- 1. BUILD IMAGE
+  build-and-push:
+    name: "1. Docker Build and Push Image"
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      image: ${{ steps.vars.outputs.image }}
+      tag: ${{ steps.vars.outputs.tag }}
+      version: ${{ steps.vars.outputs.version }}
+    env:
+      # optional Docker Hub mirror - only used when both repository secrets exist
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+    steps:
+      - name: Checkout the exact commit that passed CI
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Compute image name, tag and version
+        id: vars
+        run: |
+          owner="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          sha="$(git rev-parse --short=7 HEAD)"
+          echo "image=${REGISTRY}/${owner}/${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
+          echo "tag=sha-${sha}"                           >> "$GITHUB_OUTPUT"
+          echo "version=1.0.${{ github.run_number }}"      >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build image and push to GHCR
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.vars.outputs.image }}:${{ steps.vars.outputs.tag }}
+          build-args: APP_VERSION=${{ steps.vars.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Mirror image to Docker Hub (optional)
+        if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
+        run: |
+          echo "${DOCKERHUB_TOKEN}" | docker login -u "${DOCKERHUB_USERNAME}" --password-stdin
+          src="${{ steps.vars.outputs.image }}:${{ steps.vars.outputs.tag }}"
+          dst="${DOCKERHUB_USERNAME}/${IMAGE_NAME}:${{ steps.vars.outputs.tag }}"
+          docker pull "$src"
+          docker tag "$src" "$dst"
+          docker push "$dst"
+
+      - name: Summary
+        run: |
+          {
+            echo "### :package: Image published"
+            echo "- Image: \`${{ steps.vars.outputs.image }}:${{ steps.vars.outputs.tag }}\`"
+            echo "- Release version: \`${{ steps.vars.outputs.version }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------- 2. CANARY
+  canary-deploy:
+    name: "2. Canary Deploy (10 percent traffic) and Verify"
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEW_IMAGE: ${{ needs.build-and-push.outputs.image }}:${{ needs.build-and-push.outputs.tag }}
+      STABLE_TAG_IMAGE: ${{ needs.build-and-push.outputs.image }}:stable
+      VERSION: ${{ needs.build-and-push.outputs.version }}
+    steps:
+      - name: Checkout deployment files
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve the stable (previous) release
+        run: |
+          docker pull "$NEW_IMAGE"
+          if docker pull "$STABLE_TAG_IMAGE" > /dev/null 2>&1; then
+            echo "Previous stable release found: $STABLE_TAG_IMAGE"
+            echo "STABLE_IMAGE=$STABLE_TAG_IMAGE" >> "$GITHUB_ENV"
+          else
+            echo "First release ever - using the new image as the stable baseline"
+            echo "STABLE_IMAGE=$NEW_IMAGE" >> "$GITHUB_ENV"
+          fi
+          echo "CANARY_IMAGE=$NEW_IMAGE" >> "$GITHUB_ENV"
+
+      - name: Deploy canary (stable 90 percent / canary 10 percent)
+        run: bash deploy/canary-deploy.sh "$STABLE_IMAGE" "$CANARY_IMAGE" "$VERSION" "${{ inputs.simulate_canary_failure || 'false' }}"
+
+      - name: Verify canary health with live traffic
+        run: bash deploy/verify-canary.sh 50
+
+      - name: Show container logs when verification failed
+        if: failure()
+        run: docker compose -f deploy/docker-compose.canary.yml logs --tail=40 canary || true
+
+      - name: Tear down canary environment
+        if: always()
+        run: docker compose -f deploy/docker-compose.canary.yml down --remove-orphans || true
+
+  # ---------------------------------------------------------------- 3. PROMOTE
+  promote:
+    name: "3. Promote to 100 percent (Full Rollout)"
+    needs: [ build-and-push, canary-deploy ]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Add required reviewers to the "production" environment in
+    # Settings > Environments if you want a manual approval before full rollout.
+    environment: production
+    env:
+      NEW_IMAGE: ${{ needs.build-and-push.outputs.image }}:${{ needs.build-and-push.outputs.tag }}
+      IMAGE: ${{ needs.build-and-push.outputs.image }}
+      VERSION: ${{ needs.build-and-push.outputs.version }}
+      # required by deploy/docker-compose.canary.yml for the final "down" step
+      STABLE_IMAGE: ${{ needs.build-and-push.outputs.image }}:${{ needs.build-and-push.outputs.tag }}
+      CANARY_IMAGE: ${{ needs.build-and-push.outputs.image }}:${{ needs.build-and-push.outputs.tag }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Roll the new release out to 100 percent of traffic
+        run: |
+          docker pull "$NEW_IMAGE"
+          bash deploy/full-rollout.sh "$NEW_IMAGE" "$VERSION"
+
+      - name: Mark the new image as the stable release
+        run: |
+          docker tag "$NEW_IMAGE" "$IMAGE:stable"
+          docker tag "$NEW_IMAGE" "$IMAGE:latest"
+          docker push "$IMAGE:stable"
+          docker push "$IMAGE:latest"
+
+      - name: Tag the stable release on Docker Hub (optional)
+        if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
+        run: |
+          echo "${DOCKERHUB_TOKEN}" | docker login -u "${DOCKERHUB_USERNAME}" --password-stdin
+          hub="${DOCKERHUB_USERNAME}/${IMAGE_NAME}"
+          docker tag "$NEW_IMAGE" "$hub:stable"
+          docker tag "$NEW_IMAGE" "$hub:latest"
+          docker push "$hub:stable"
+          docker push "$hub:latest"
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f deploy/docker-compose.canary.yml down --remove-orphans || true
+
+      - name: Summary
+        run: |
+          {
+            echo "### :rocket: Release ${VERSION} is live for 100 percent of users"
+            echo "- Canary verification passed, then full rollout succeeded"
+            echo "- \`stable\` and \`latest\` now point to \`${NEW_IMAGE}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------- 4. ROLLBACK
+  rollback:
+    name: "4. Rollback (keep previous stable release)"
+    needs: [ build-and-push, canary-deploy ]
+    if: ${{ always() && needs.canary-deploy.result == 'failure' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report the rollback
+        run: |
+          {
+            echo "### :rewind: Canary FAILED - automatic rollback"
+            echo "- Only 10 percent of traffic ever reached the new release"
+            echo "- The \`stable\` / \`latest\` tags were NOT moved, so users keep the previous version"
+            echo "- Failed image: \`${{ needs.build-and-push.outputs.image }}:${{ needs.build-and-push.outputs.tag }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Canary failed - previous stable release stays in production."
+          exit 1
