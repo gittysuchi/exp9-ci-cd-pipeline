@@ -1,0 +1,15 @@
+services:
+  stable:
+    build: .
+    container_name: exp9-stable
+    environment:
+      - SERVER_PORT=8080
+    ports:
+      - "8080:8080"
+  canary:
+    build: .
+    container_name: exp9-canary
+    environment:
+      - SERVER_PORT=8080
+    ports:
+      - "8081:8080"

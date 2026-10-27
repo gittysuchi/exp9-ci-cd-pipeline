@@ -1,0 +1,30 @@
+{
+  "consumer": { "name": "product-consumer" },
+  "provider": { "name": "product-provider" },
+  "interactions": [
+    {
+      "description": "a request for the product list",
+      "providerStates": [{ "name": "products exist" }],
+      "request": { "method": "GET", "path": "/api/products" },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "application/json" },
+        "body": [
+          { "id": 1, "name": "Notebook", "price": 45.0 },
+          { "id": 2, "name": "Pen", "price": 10.0 }
+        ],
+        "matchingRules": {
+          "body": {
+            "$.id": { "matchers": [{ "match": "type" }] },
+            "$.name": { "matchers": [{ "match": "type" }] },
+            "$.price": { "matchers": [{ "match": "number" }] }
+          }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": { "version": "3.0.0" },
+    "provider": { "name": "pact-jvm", "version": "4.6.17" }
+  }
+}
