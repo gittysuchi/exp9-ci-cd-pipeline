@@ -1,4 +1,6 @@
-C:\Users\Suchismita\OneDrive\full stack\exp9-ci-cd-pipeline\src\test\java\com\example\exp9\PostgresContainerTest.java
-C:\Users\Suchismita\OneDrive\full stack\exp9-ci-cd-pipeline\src\test\java\com\example\exp9\ProductControllerTest.java
-C:\Users\Suchismita\OneDrive\full stack\exp9-ci-cd-pipeline\src\test\java\com\example\exp9\ProductProviderPactTest.java
-C:\Users\Suchismita\OneDrive\full stack\exp9-ci-cd-pipeline\src\test\java\com\example\exp9\ProductServiceTest.java
+C:\Users\Suchismita\OneDrive\full stack\exp9-ci-cd-pipeline\src\test\java\com\exp9\cicd\api\ProductApiIntegrationTest.java
+C:\Users\Suchismita\OneDrive\full stack\exp9-ci-cd-pipeline\src\test\java\com\exp9\cicd\api\ProductControllerTest.java
+C:\Users\Suchismita\OneDrive\full stack\exp9-ci-cd-pipeline\src\test\java\com\exp9\cicd\containers\ProductPostgresContainerTest.java
+C:\Users\Suchismita\OneDrive\full stack\exp9-ci-cd-pipeline\src\test\java\com\exp9\cicd\contract\ProductConsumerPactTest.java
+C:\Users\Suchismita\OneDrive\full stack\exp9-ci-cd-pipeline\src\test\java\com\exp9\cicd\contract\ProductProviderPactTest.java
+C:\Users\Suchismita\OneDrive\full stack\exp9-ci-cd-pipeline\src\test\java\com\exp9\cicd\unit\ProductServiceTest.java

@@ -1,4 +1,0 @@
--------------------------------------------------------------------------------
-Test set: com.example.exp9.ProductProviderPactTest
--------------------------------------------------------------------------------
-Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.310 s -- in com.example.exp9.ProductProviderPactTest

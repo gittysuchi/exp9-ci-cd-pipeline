@@ -1,4 +1,6 @@
-com\example\exp9\ProductServiceTest.class
-com\example\exp9\ProductControllerTest.class
-com\example\exp9\PostgresContainerTest.class
-com\example\exp9\ProductProviderPactTest.class
+com\exp9\cicd\api\ProductControllerTest.class
+com\exp9\cicd\unit\ProductServiceTest.class
+com\exp9\cicd\api\ProductApiIntegrationTest.class
+com\exp9\cicd\containers\ProductPostgresContainerTest.class
+com\exp9\cicd\contract\ProductProviderPactTest.class
+com\exp9\cicd\contract\ProductConsumerPactTest.class
